@@ -1,199 +1,466 @@
 import pandas as pd
 import numpy as np
-import seaborn as sns
-from mpl_toolkits.mplot3d import Axes3D
+from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from sklearn.impute import SimpleImputer
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 
 # Set general aesthetics for the plots
 sns.set_style("whitegrid")
+
+
+def process_ontime_payments(df):
+    # Convert the 'TransactionStartTime' column to datetime
+    df['TransactionStartTime'] = pd.to_datetime(df['TransactionStartTime'])
+
+    # Define a hypothetical payment due period (e.g., 30 days)
+    payment_due_period = pd.Timedelta(days=30)
+
+    # Split the data into debits and credits
+    debits = df[df['Amount'] > 0].copy()
+    credits = df[df['Amount'] < 0].copy()
+
+    # Merge debits with credits on CustomerId to find corresponding credits within the due period
+    credits['TransactionEndTime'] = credits['TransactionStartTime']
+    merged = pd.merge(debits, credits, on='CustomerId', suffixes=('_debit', '_credit'))
+
+    # Filter out credits that fall outside the due period
+    merged = merged[merged['TransactionStartTime_credit'] <= (merged['TransactionStartTime_debit'] + payment_due_period)]
+
+    # Determine on-time payments
+    merged['OnTimePayment'] = merged['TransactionStartTime_credit'] <= (merged['TransactionStartTime_debit'] + payment_due_period)
+
+    # Aggregate the payment history to get the number of on-time payments per customer
+    df_final = merged.groupby('CustomerId').agg(
+        OnTimePayments=('OnTimePayment', 'sum')
+    ).reset_index()
+
+    return df_final
+
+
 import pandas as pd
 
 
-def create_aggregate_features(df):
+def calculate_credit_utilization_ratio(df):
     """
-    Create aggregate features from a transaction dataframe.
+    Calculates the customer's credit utilization ratio for BNPL transactions.
 
-    Parameters:
-    df (pandas.DataFrame): The input transaction dataframe.
+    Args:
+        df (pandas.DataFrame): The BNPL transaction data, must include 'CustomerId', 'Amount'.
 
     Returns:
-    pandas.DataFrame: A dataframe with aggregated features for each customer.
+        pandas.DataFrame: The original DataFrame with added 'credit_utilization_ratio' column for each customer.
     """
-    # Ensure datetime format
-    df['TransactionStartTime'] = pd.to_datetime(df['TransactionStartTime'], format='%Y-%m-%d %H:%M:%S%z')
+    # Ensure 'Amount' is numeric
+    df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce')
 
-    # Extract temporal features
-    df['TransactionHour'] = df['TransactionStartTime'].dt.hour
-    df['TransactionDay'] = df['TransactionStartTime'].dt.day
-    df['TransactionMonth'] = df['TransactionStartTime'].dt.month
-    df['TransactionYear'] = df['TransactionStartTime'].dt.year
+    # Calculate the total purchases and repayments for each customer
+    df['PurchaseAmount'] = df['Amount'].apply(lambda x: x if x > 0 else 0)
+    df['RepaymentAmount'] = df['Amount'].apply(lambda x: -x if x < 0 else 0)
 
-    # Aggregate transaction data by CustomerId
-    df_agg = df.groupby('CustomerId').agg({
-        'TransactionStartTime': lambda x: (x.max() - x.min()).days,
-        'TransactionId': 'count',
-        'Amount': ['sum', 'mean', 'std'],
-        'TransactionHour': 'mean',
-        'TransactionDay': 'mean',
-        'TransactionMonth': 'mean',
-        'TransactionYear': 'mean'
-    }).reset_index()
+    # Aggregate purchases and repayments per customer
+    aggregated = df.groupby('CustomerId').agg(
+        TotalPurchases=('PurchaseAmount', 'sum'),
+        TotalRepayments=('RepaymentAmount', 'sum')
+    ).reset_index()
 
-    # Rename the columns
-    df_agg.columns = ['CustomerId', 'Recency', 'Frequency', 'Monetary', 'MeanAmount',
-                      'StdAmount', 'AvgTransactionHour', 'AvgTransactionDay', 'AvgTransactionMonth',
-                      'AvgTransactionYear']
+    # Calculate the current balance and credit limit
+    aggregated['CurrentBalance'] = aggregated['TotalPurchases'] - aggregated['TotalRepayments']
+    aggregated['CreditLimit'] = aggregated['TotalPurchases']  # Assuming credit limit equals total purchases
 
-    # Calculate additional features
-    total_debits = df[df['Amount'] > 0].groupby('CustomerId')['Amount'].sum()
-    total_credits = df[df['Amount'] < 0].groupby('CustomerId')['Amount'].sum()
-    debit_count = df[df['Amount'] > 0].groupby('CustomerId')['TransactionId'].count()
-    credit_count = df[df['Amount'] < 0].groupby('CustomerId')['TransactionId'].count()
-    transaction_volatility = df.groupby('CustomerId')['Amount'].std()
+    # Calculate the credit utilization ratio
+    aggregated['CreditUtilizationRatio'] = aggregated['CurrentBalance'] / aggregated['CreditLimit']
 
-    # Merge additional features
-    df_agg = df_agg.merge(total_debits.rename('TotalDebits'), on='CustomerId', how='left')
-    df_agg = df_agg.merge(total_credits.rename('TotalCredits'), on='CustomerId', how='left')
-    df_agg = df_agg.merge(debit_count.rename('DebitCount'), on='CustomerId', how='left')
-    df_agg = df_agg.merge(credit_count.rename('CreditCount'), on='CustomerId', how='left')
-    df_agg = df_agg.merge(transaction_volatility.rename('TransactionVolatility'), on='CustomerId', how='left')
+    # Replace infinite and NaN values with 0
+    aggregated['CreditUtilizationRatio'].replace([float('inf'), -float('inf')], 0, inplace=True)
+    aggregated['CreditUtilizationRatio'].fillna(0, inplace=True)
 
-    # Calculate derived features
-    df_agg['MonetaryAmount'] = df_agg['TotalDebits'] + abs(df_agg['TotalCredits'])
-    df_agg['NetCashFlow'] = df_agg['TotalDebits'] - abs(df_agg['TotalCredits'])
-    df_agg['DebitCreditRatio'] = df_agg['TotalDebits'] / abs(df_agg['TotalCredits'])
-
-    return df_agg.dropna()
-
-
-def visualize_rfms_space(df):
-    # Extract the RFMS scores
-    r_score = df['Recency']
-    f_score = df['Frequency']
-    m_score = df['Monetary']
-    debit_credit_ratio = df['DebitCreditRatio']
-    transaction_volatility = df['TransactionVolatility']
-
-    # Visualize the RFMS space
-    fig = plt.figure(figsize=(10, 8))
-    ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(r_score, f_score, m_score, c=debit_credit_ratio, cmap='viridis')
-    ax.set_xlabel('Recency')
-    ax.set_ylabel('Frequency')
-    ax.set_zlabel('Monetary Value')
-    plt.title('RFMS Space')
-
-    # Defining the boundary between high and low RFMS scores
-    r_threshold = np.percentile(r_score, 60)
-    f_threshold = np.percentile(f_score, 50)
-    m_threshold = np.percentile(m_score, 50)
-    dc_threshold = np.percentile(debit_credit_ratio, 60)
-    tv_threshold = np.percentile(transaction_volatility, 50)
-
-    # Plot the thresholds
-    ax.plot([r_threshold, r_threshold], [0, max(f_score)], [0, max(m_score)], color='r', linestyle='--', label='Recency Threshold')
-    ax.plot([0, max(r_score)], [f_threshold, f_threshold], [0, max(m_score)], color='g', linestyle='--', label='Frequency Threshold')
-    ax.plot([0, max(r_score)], [0, max(f_score)], [m_threshold, m_threshold], color='b', linestyle='--', label='Monetary Threshold')
-    ax.plot([0, max(r_score)], [0, max(f_score)], [0, max(m_score)], color='y', linestyle='--', label='Debit-Credit Ratio Threshold')
-    ax.plot([0, max(r_score)], [0, max(f_score)], [0, max(m_score)], color='m', linestyle='--', label='Transaction Volatility Threshold')
-    ax.legend()
-
-    plt.show()
-
-    return r_threshold, f_threshold, m_threshold, dc_threshold, tv_threshold
-
-def classify_users_by_rfms(df, r_threshold, f_threshold, m_threshold, dc_threshold, tv_threshold):
-    df['Classification'] = 'High-risk'
-
-    # Identify Low-risk users based on RFMS thresholds
-    df.loc[(df['Recency'] <= r_threshold) & (df['Frequency'] >= f_threshold) & (
-        df['Monetary'] >= m_threshold), 'Classification'] = 'Low-risk'
-
-    # Reclassify users with low debit-credit ratio and low transaction volatility as Low-risk
-    df.loc[(df['Classification'] == 'High-risk') & (
-        df['DebitCreditRatio'] <= dc_threshold) & (
-        df['TransactionVolatility'] <= tv_threshold), 'Classification'] = 'Low-risk'
-
-    df['is_high_risk'] = (df['Classification'] == 'High-risk').astype(int)
+    # Merge the result back to the original DataFrame
+    df = pd.merge(df, aggregated[['CustomerId', 'CreditUtilizationRatio']], on='CustomerId', how='left')
 
     return df
 
 
-def calculate_woe_and_bin_features(data, features_to_bin, target, num_bins=5):
-    """
-    Create binned features and calculate Weight of Evidence (WoE) for specified features in the input DataFrame.
 
-    Parameters:
-    data (pd.DataFrame): The input DataFrame containing the features and target column.
-    features_to_bin (list): A list of feature names to be binned.
-    target (str): The name of the target column (binary class).
-    num_bins (int): The number of bins to create for the features (default is 5).
+def create_rfms_features(df, r_weight=0.4, f_weight=0.3, m_weight=0.2, s_weight=0.1):
+    """
+    Creates RFMS features (Recency, Frequency, Monetary, and Standard Deviation) for customer transactions.
+    Includes the RFMS combined feature, which is the weighted sum of R, F, M, and S.
+
+    Args:
+        df (pandas.DataFrame): The transaction data, must include 'AccountId', 'TransactionStartTime',
+                               'TransactionId', 'ChannelId', 'ProductId', 'Amount', 'credit_utilization_ratio',
+                               and 'OnTimePayments'.
+        r_weight (float): Weight for the Recency feature, default is 0.4.
+        f_weight (float): Weight for the Frequency feature, default is 0.3.
+        m_weight (float): Weight for the Monetary feature, default is 0.2.
+        s_weight (float): Weight for the Standard Deviation feature, default is 0.1.
 
     Returns:
-    pd.DataFrame: The input DataFrame with new columns for binned features and their corresponding WoE values.
+        pandas.DataFrame: DataFrame with RFMS features, the RFMS combined feature, and the 'OnTimePayments' feature.
     """
+    # Convert 'TransactionStartTime' to datetime format
+    df['TransactionStartTime'] = pd.to_datetime(df['TransactionStartTime'], format='%Y-%m-%d %H:%M:%S%z')
 
-    def woe_binning(df, feature, target):
-        """
-        Calculate the Weight of Evidence (WoE) for a given feature.
+    # Calculate Recency
+    max_date = df['TransactionStartTime'].max()
+    df['dif'] = max_date - df['TransactionStartTime']
 
-        Parameters:
-        df (pd.DataFrame): The input dataframe containing the feature and target columns.
-        feature (str): The name of the feature column for which WoE is to be calculated.
-        target (str): The name of the target column (binary class).
+    # Group by 'AccountId' and calculate the minimum difference for recency
+    df_recency = df.groupby('AccountId')['dif'].min().reset_index()
 
-        Returns:
-        dict: A dictionary with bins as keys and their corresponding WoE values.
-        """
-        woe_dict = {}
-        total_good = df[target].sum()
-        total_bad = df[target].count() - total_good
+    # Convert the 'dif' to days to get the recency value
+    df_recency['Recency'] = df_recency['dif'].dt.days
 
-        for bin_id in df[feature].unique():
-            bin_data = df[df[feature] == bin_id]
-            good = bin_data[target].sum()
-            bad = bin_data[target].count() - good
+    # Merge recency back to the main dataframe
+    df = df.merge(df_recency[['AccountId', 'Recency']], on='AccountId')
 
-            if good == 0 or bad == 0:
-                woe = 0 
-            else:
-                woe = np.log((good / total_good) / (bad / total_bad))
+    # Drop the 'dif' column
+    df.drop(columns=['dif'], inplace=True)
 
-            woe_dict[bin_id] = woe
+    # Calculate Frequency
+    df['Frequency'] = df.groupby('AccountId')['TransactionId'].transform('count')
 
-        return woe_dict
+    # Calculate Monetary Value
+    df['Monetary'] = df.groupby('AccountId')['Amount'].transform('sum') / df['Frequency']
 
-    def create_binned_features(df, features, num_bins):
-        """
-        Create binned features for the specified features in the input DataFrame using the quantile method.
+    # Calculate Standard Deviation of Amounts
+    df['StdDev'] = df.groupby('AccountId')['Amount'].transform(lambda x: np.std(x, ddof=0))
 
-        Parameters:
-        df (pd.DataFrame): The input DataFrame.
-        features (list): A list of feature names to be binned.
-        num_bins (int): The number of bins to create for the features.
+    # Calculate the RFMS combined feature with custom weights
+    #df['RFMS_score'] = df['Recency'] * r_weight + df['Frequency'] * f_weight + df['Monetary'] * m_weight + df['StdDev'] * s_weight
 
-        Returns:
-        pd.DataFrame: The input DataFrame with the new binned features added.
-        """
-        for feature in features:
-            df[f"{feature}_binned"] = pd.qcut(df[feature], q=num_bins, labels=False, duplicates='drop')
+    # Optionally calculate credit utilization ratio and multiply it with Monetary value
+    if 'credit_utilization_ratio' in df.columns:
+        df['Monetary'] *= df['credit_utilization_ratio']
+
+    # Dropping duplicates to get one row per customer with RFMS values
+    rfms_df = df.drop_duplicates(subset='AccountId', keep='first')
+
+    return rfms_df
+
+
+def create_aggregate_features(df):
+    try:
+        # Group transactions by customer
+        grouped = df.groupby('AccountId')
+
+        # Calculate aggregate features
+        aggregate_features = grouped['Amount'].agg(['sum', 'mean', 'count', 'std']).reset_index()
+        aggregate_features.columns = ['AccountId', 'TotalTransactionAmount', 'AverageTransactionAmount', 'TransactionCount', 'StdTransactionAmount']
+
+        # Merge aggregate features with original dataframe
+        df = pd.merge(df, aggregate_features, on='AccountId', how='left')
+
         return df
 
-    # Ensure the target feature is included in the returned DataFrame
-    data[target] = data[target]
+    except Exception as e:
+        print("An error occurred:", e)
 
-    # Create binned features
-    data = create_binned_features(data, features_to_bin, num_bins)
 
-    # Calculate WoE for binned features
-    for feature in features_to_bin:
-        binned_feature = f"{feature}_binned"
-        woe_dict = woe_binning(data, binned_feature, target)
-        data[f'{binned_feature}_WoE'] = data[binned_feature].map(woe_dict)
 
-    # Drop binned features
-    binned_columns = [f"{feature}_binned" for feature in features_to_bin]
-    data.drop(columns=binned_columns, inplace=True)
+def extract_time_features(df):
+    try:
+        # Convert TransactionStartTime to datetime
+        df['TransactionStartTime'] = pd.to_datetime(df['TransactionStartTime'])
 
-    return data
+        # Extract time-related features
+        df['TransactionHour'] = df['TransactionStartTime'].dt.hour
+        df['TransactionDay'] = df['TransactionStartTime'].dt.day
+        df['TransactionMonth'] = df['TransactionStartTime'].dt.month
+        df['TransactionYear'] = df['TransactionStartTime'].dt.year
+
+        return df
+
+    except Exception as e:
+        print("An error occurred:", e)
+
+
+
+def remove_outliers(df):
+    """
+    Removes outliers from a DataFrame based on the IQR method.
+
+    Parameters:
+    df (pd.DataFrame): Input DataFrame from which to remove outliers.
+
+    Returns:
+    pd.DataFrame: DataFrame with outliers removed.
+    """
+    # Select numerical features
+    numerical_features = df.select_dtypes(include=[np.number])
+
+    # Initialize a boolean mask to keep track of outliers
+    mask = pd.Series([True] * len(df))
+
+    for column in numerical_features.columns:
+        q1 = df[column].quantile(0.25)
+        q3 = df[column].quantile(0.75)
+        iqr = q3 - q1
+        lower_bound = q1 - 1.5 * iqr
+        upper_bound = q3 + 1.5 * iqr
+
+        # Update the mask to filter out rows containing outliers
+        mask = mask & ~((df[column] < lower_bound) | (df[column] > upper_bound))
+
+    # Filter the DataFrame to remove outliers
+    df_no_outliers = df[mask]
+    return df_no_outliers
+
+
+def encode_categorical_variables(df):
+    """
+    Encodes categorical variables in the input dataframe using Label Encoding.
+
+    Parameters:
+    df (pandas.DataFrame): The input dataframe containing the data.
+
+    Returns:
+    pandas.DataFrame: The dataframe with the categorical variables encoded and converted to numerical type.
+    """
+    try:
+        # Copy the dataframe to avoid modifying the original
+        data = df.copy()
+
+        # Label Encoding
+        label_encoder = LabelEncoder()
+        for col in data.select_dtypes(include=['object']).columns:
+            data[col] = label_encoder.fit_transform(data[col])
+
+        return data
+    except Exception as e:
+        print(f"Error occurred during encoding categorical variables: {e}")
+        return None
+
+
+def handle_missing_values(df):
+    """
+    Handles missing values in the input dataframe using imputation or removal.
+
+    Parameters:
+    df (pandas.DataFrame): The input dataframe containing the data.
+
+    Returns:
+    pandas.DataFrame: The dataframe with missing values handled.
+    """
+    try:
+        # Copy the dataframe to avoid modifying the original
+        data = df.copy()
+
+        # Impute missing values with mean
+        imputer = SimpleImputer(strategy='mean')
+        numerical_cols = data.select_dtypes(include=['int32', 'int64', 'float64']).columns
+        data[numerical_cols] = imputer.fit_transform(data[numerical_cols])
+
+        # Remove rows with missing values if they are few
+        if data.isnull().sum().sum() / len(data) < 0.05:
+            data = data.dropna()
+
+        return data
+    except Exception as e:
+        print(f"Error occurred during handling missing values: {e}")
+        return None
+
+def normalize_and_standardize_features(df):
+    """
+    Normalizes and standardizes the numerical features in the input dataframe.
+
+    Parameters:
+    df (pandas.DataFrame): The input dataframe containing the data.
+
+    Returns:
+    pandas.DataFrame: The dataframe with the numerical features normalized and standardized.
+    """
+    try:
+        # Copy the dataframe to avoid modifying the original
+        data = df.copy()
+
+        # Normalize numerical features
+        numerical_cols = data.select_dtypes(include=['int32', 'int64', 'float64']).columns
+        min_max_scaler = MinMaxScaler()
+        data[numerical_cols] = min_max_scaler.fit_transform(data[numerical_cols])
+
+        # Standardize numerical features
+        standard_scaler = StandardScaler()
+        data[numerical_cols] = standard_scaler.fit_transform(data[numerical_cols])
+
+        return data
+    except Exception as e:
+        print(f"Error occurred during normalization and standardization of numerical features: {e}")
+        return None
+
+# Outliers
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
+
+def detect_rfms_outliers(data):
+    # Select only the numeric features
+    numeric_cols = data.select_dtypes(include=['int64', 'int32','float64']).columns
+    numeric_data = data[numeric_cols]
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    sns.boxplot(data=numeric_data, orient='v', ax=ax)
+    ax.set_title('Box Plot for Numeric Features')
+    ax.set_xlabel('Feature')
+    ax.set_ylabel('Range')
+
+    # Get the outlier indices for each numeric feature
+    outlier_indices = {}
+    for col in numeric_cols:
+        q1 = numeric_data[col].quantile(0.25)
+        q3 = numeric_data[col].quantile(0.75)
+        iqr = q3 - q1
+        lower_bound = q1 - 1.5 * iqr
+        upper_bound = q3 + 1.5 * iqr
+        outlier_indices[col] = numeric_data[(numeric_data[col] < lower_bound) | (numeric_data[col] > upper_bound)].index
+
+    return outlier_indices
+
+def scale_features(df):
+    # Select only the numeric features
+    numeric_cols = df.select_dtypes(include=['int64', 'int32', 'float64']).columns
+    numeric_data = df[numeric_cols]
+
+    # Scale the numeric features using MinMaxScaler
+    min_max_scaler = MinMaxScaler()
+    scaled_numeric = min_max_scaler.fit_transform(numeric_data)
+
+    # Create a new dataframe with the scaled numeric features
+    df_scaled = pd.DataFrame(scaled_numeric, columns=numeric_cols)
+
+    # Combine the scaled numeric features with the original non-numeric features
+    df_scaled = pd.concat([df_scaled, df.drop(numeric_cols, axis=1)], axis=1)
+
+    return df_scaled
+
+def assign_comparative_binary_score(df):
+
+    # Calculate the average for all rfms
+    recency_avg = df['Recency'].mean()
+    frequency_avg = df['Frequency'].mean()
+    monetary_avg = df['Monetary'].mean()
+    segmt_avg = df['StdDev'].mean()
+    onTime_avg = df['OnTimePayments'].mean()
+
+    # Create new feature columns
+    df['<Recency_avg'] = (df['Recency'] < recency_avg).astype(int)
+    df['>Frequency_avg'] = (df['Frequency'] > frequency_avg).astype(int)
+    df['>Monetary_avg'] = (df['Monetary'] > monetary_avg).astype(int)
+    df['>StdDev_avg'] = (df['StdDev'] > segmt_avg).astype(int)
+    df['>OnTimePayment_avg'] = (df['OnTimePayments'] > onTime_avg).astype(int)
+
+    return df
+
+# Define High-risk and Low-risk classification rules
+def classify_customer(row):
+    if row['<Recency_avg'] == 1 and row['>Frequency_avg'] == 1:
+        return 'Low-risk'
+    elif row['<Recency_avg'] == 1 and row['>Frequency_avg'] == 0 and row['>Monetary_avg'] == 1:
+        return 'Low-risk'
+    else:
+        return 'High-risk'
+
+
+def apply_classification(df):
+    # Apply the classify_customer function to each row of the DataFrame
+    df['Classification'] = df.apply(classify_customer, axis=1)
+
+    # Create the Binary_Classification column based on the Classification column
+    df['Binary_Classification'] = 0
+    df.loc[df['Classification'] == 'High-risk', 'Binary_Classification'] = 1
+
+    return df
+
+
+def visualize_rfms(df):
+    # Prepare the color mapping
+    color_map = {'Low-risk': 'green', 'High-risk': 'red'}
+    df['color'] = df['Classification'].map(color_map)
+
+    # Create 3D scatter plot
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection='3d')
+
+    # Plot the scatter points
+    ax.scatter(df['<Recency_avg'], df['>Monetary_avg'], df['>Frequency_avg'], c=df['color'], s=50, marker='o')
+
+    # Set axis labels
+    ax.set_xlabel('Recency')
+    ax.set_zlabel('Frequency')
+    ax.set_ylabel('Monetary')
+
+    # Set title
+    ax.set_title('RFMS 3D Visualization')
+
+    # Adjust axis ranges
+    x_min, x_max = min(df['<Recency_avg']) - 0.1 * abs(min(df['<Recency_avg'])), max(df['<Recency_avg']) + 0.1 * abs(
+        max(df['<Recency_avg']))
+    y_min, y_max = min(df['>Frequency_avg']) - 0.1 * abs(min(df['>Frequency_avg'])), max(
+        df['>Frequency_avg']) + 0.1 * abs(max(df['>Frequency_avg']))
+    z_min, z_max = min(df['>Monetary_avg']) - 0.1 * abs(min(df['>Monetary_avg'])), max(df['>Monetary_avg']) + 0.1 * abs(
+        max(df['>Monetary_avg']))
+
+    ax.set_xlim(x_min, x_max)
+    ax.set_ylim(y_min, y_max)
+    ax.set_zlim(z_min, z_max)
+
+    plt.show()
+
+def calculate_woe_iv(df, feature, target, bins=10):
+    # Binning the continuous variable if necessary
+    if df[feature].dtype.kind in 'bifc':
+        df[feature + '_bin'], bin_edges = pd.qcut(df[feature], q=bins, duplicates='drop', retbins=True)
+    else:
+        df[feature + '_bin'] = df[feature]
+
+    # Calculate the total number of events (High-risk) and non-events (Low-risk)
+    total_good = df[target].value_counts()[0]
+    total_bad = df[target].value_counts()[1]
+
+    # Create a dataframe to store the WoE and IV
+    woe_df = pd.DataFrame()
+
+    # Group by the binned feature and calculate counts
+    grouped = df.groupby(feature + '_bin')[target].value_counts().unstack(fill_value=0)
+    grouped.columns = ['good', 'bad']
+
+    # Add a small value to prevent division by zero
+    epsilon = 0.5
+    grouped['good'] = grouped['good'] + epsilon
+    grouped['bad'] = grouped['bad'] + epsilon
+
+    # Recalculate the total number of events (High-risk) and non-events (Low-risk)
+    total_good += epsilon * grouped.shape[0]
+    total_bad += epsilon * grouped.shape[0]
+
+    # Calculate the distribution of good and bad
+    grouped['good_dist'] = grouped['good'] / total_good
+    grouped['bad_dist'] = grouped['bad'] / total_bad
+
+    # Calculate WoE and IV
+    grouped['WoE'] = np.log(grouped['bad_dist'] / grouped['good_dist'])
+    grouped['IV'] = (grouped['bad_dist'] - grouped['good_dist']) * grouped['WoE']
+
+    # Append WoE and IV to the dataframe
+    woe_df = pd.concat([woe_df, grouped])
+
+    # Clean up temporary bin column
+    df.drop(columns=[feature + '_bin'], inplace=True)
+
+    return woe_df['WoE'], woe_df['IV'].sum()
+
+def woe_binning(df, features, target='Classification', bins=10):
+    woe_info = {}
+    iv_info = {}
+
+    for feature in features:
+        woe, iv = calculate_woe_iv(df, feature, target, bins)
+        df[f'{feature}_WoE'] = df[feature].map(woe)
+        woe_info[feature] = woe
+        iv_info[feature] = iv
+
+    return df, woe_info, iv_info
+
