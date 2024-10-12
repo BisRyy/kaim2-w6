@@ -1,35 +1,147 @@
-# Credit Risk Modeling and Loan Optimization using Machine Learning
-This project aims to develop advanced machine learning models for credit risk assessment and loan optimization in the context of a buy-now-pay-later (BNPL) service.
-The key objectives of this project are:
-1. Credit Scoring Model: Create a machine learning model that can accurately predict the credit risk and default probability of new customers applying for the BNPL service.
-2. Loan Optimization Model: Develop a machine learning model that can determine the optimal loan amount, repayment period, and other terms for each applicant based on their credit profile and other relevant factors.
+# Integrated Credit Risk Modeling and Loan Optimization with Advanced Segmentation
 
-The project leverages various supervised and unsupervised machine learning techniques, such as logistic regression, decision trees, random forests, and clustering algorithms, to build robust and performant credit risk and loan optimization models.
-The models will be trained and validated using historical BNPL application and repayment data, as well as external credit bureau information. The resulting models will be integrated into the BNPL platform to enhance the customer experience, improve credit decisions, and optimize loan portfolios.
-This project aims to deliver a comprehensive machine learning-based solution that can help the BNPL service provider make more informed and data-driven decisions, ultimately leading to increased customer satisfaction, reduced default rates, and improved overall business performance.
+This project focuses on leveraging advanced data analytics and machine learning techniques to develop a comprehensive credit risk assessment, credit scoring, and loan optimization framework. The system is designed to support a Buy-Now-Pay-Later (BNPL) service offered by a financial service provider in partnership with an eCommerce company. The primary objectives include customer segmentation, credit risk modeling, and loan optimization.
 
+## Project Objectives
 
-## Getting Started
+### 1. Customer Segmentation
+
+- **Objective**: Conduct in-depth customer segmentation using RFMS (Recency, Frequency, Monetary Value, and Standard Deviation of Amount Spent) scores.
+- **Purpose**: Classify customers into high-risk and low-risk segments to tailor the BNPL or loan service offerings.
+
+### 2. Credit Risk Modeling
+
+- **Objective**: Develop machine learning models to predict credit risk and default probabilities.
+- **Outcome**: Provide a risk probability for each customer, aiding in the assessment of creditworthiness and default risk.
+- **Credit Score Model**: Create a credit score model based on risk probabilities, aligned with FICO standards.
+  ![creditscore](https://github.com/bisryy/kaim2-w6/blob/main/assets/FICO_Score.png)
+
+### 3. Loan Optimization Model
+
+- **Objective**: Develop a model to determine optimal loan amounts, repayment periods, and other terms.
+- **Outcome**: Offer personalized financing options to customers, enhancing the BNPL service's value proposition.
+
+## Methodology
+
+The project integrates supervised and unsupervised machine learning techniques, including logistic regression, decision trees, random forests, and clustering algorithms. These models are trained and validated using historical BNPL data and external credit bureau information. The ultimate goal is to embed these models into the BNPL platform, improving credit decision-making, customer satisfaction, and business performance.
+
+## Table of Contents
+
+1. [Data Collection and Preprocessing](#data-collection-and-preprocessing)
+2. [Exploratory Data Analysis (EDA)](#exploratory-data-analysis-eda)
+3. [Feature Engineering](#feature-engineering)
+4. [Weight of Evidence (WoE) Binning](#weight-of-evidence-woe-binning)
+5. [Feature Selection](#feature-selection)
+6. [Model Development](#model-development)
+7. [Model Evaluation and Selection](#model-evaluation-and-selection)
+8. [Model Deployment and Integration](#model-deployment-and-integration)
+9. [Monitoring and Continuous Improvement](#monitoring-and-continuous-improvement)
+10. [Installation](#installation)
+11. [Usage](#usage)
+12. [Contributing](#contributing)
+13. [License](#license)
+14. [Acknowledgments](#acknowledgments)
+
+## Data Collection and Preprocessing
+
+Gather and preprocess historical BNPL application and repayment data. This includes data cleaning, handling missing values, and normalization.
+
+- **Notebook**: [Data Cleaning](https://github.com/bisryy/kaim2-w6/blob/main/notebooks/data_cleaning.ipynb)
+
+## Exploratory Data Analysis (EDA)
+
+Analyze customer characteristics, behaviors, and credit profiles to identify patterns influencing credit risk and repayment.
+
+- **Notebook**: [EDA](https://github.com/bisryy/kaim2-w6/blob/main/notebooks/eda.ipynb)
+
+## Feature Engineering
+
+Create new features, including RFMS scores, based on insights from EDA to enhance the models' predictive power.
+
+#### Customer Segmentation
+
+Constructing a default estimator (proxy) By visualizing all transactions in the RFMS space to establish a boundary Where customers are classified as high and low RFMS scores.
+
+- **Visualizing Transactions in RFMS space & Establishing boundaries**.
+
+![rfms](https://github.com/bisryy/kaim2-w6/blob/main/assets/rfms_space.png)
+
+- **Segmentation**
+  ![segmwnt](https://github.com/bisryy/kaim2-w6/blob/main/assets/classfication.png)
+
+- **Notebook**: [Feature Engineering](https://github.com/bisryy/kaim2-w6/blob/main/notebooks/feature_engineering.ipynb)
+
+## Weight of Evidence (WoE) Binning
+
+Apply WoE binning to transform features into a suitable format for machine learning models.
+
+- **Notebook**: [WoE Binning](https://github.com/bisryy/kaim2-w6/blob/main/notebooks/feature_engineering.ipynb)
+
+## Feature Selection
+
+Select the most relevant features using techniques like correlation analysis and recursive feature elimination.
+
+- **Correlation Analysis**
+
+![cor](https://github.com/bisryy/kaim2-w6/blob/main/assets/correlation.png)
+
+- **Selected Features**
+
+![features](https://github.com/bisryy/kaim2-w6/blob/main/assets/selected_features.png)
+
+- **Notebook**: [Feature Selection](https://github.com/bisryy/kaim2-w6/blob/main/notebooks/feature_engineering.ipynb)
+
+## Model Development
+
+Develop various machine learning models to predict credit risk, score, and loan optimization metrics.
+
+#### Model 1 ( GradientBoosting ) : Predictive Credit Risk probability estimator Model.
+
+- **Model Evaluation**
+  ![model1](https://github.com/bisryy/kaim2-w6/blob/main/assets/ROC-Curve.png)
+
+#### Model 2 ( Linear Regression ) : Credit Score (from risk probability estimates) Model.
+
+- **Model Evaluation**
+  ![model2](https://github.com/bisryy/kaim2-w6/blob/main/assets/actual_prediction.png)
+
+- **Credit Scoring**
+  ![model2](https://github.com/bisryy/kaim2-w6/blob/main/assets/creditScore.png)
+
+- **Notebook**: [Model Development](https://github.com/bisryy/kaim2-w6/blob/main/notebooks/model_building.ipynb)
+
+## Model Deployment and Integration
+
+Deploy the selected models into the BNPL platform to enhance decision-making processes.
+
+## Monitoring and Continuous Improvement
+
+Continuously monitor and refine the models to ensure they maintain high accuracy and effectiveness over time.
+
+## Installation
 
 ### Prerequisites
 
 - Python 3.x
 - Virtual environment (e.g., `virtualenv`, `conda`)
-- Required Python packages (listed in `requirements.txt`)
 
-### Installation
+### Steps
 
 1. Clone the repository:
-   ```
+
+   ```bash
    git clone https://github.com/bisryy/kaim2-w6.git
    ```
-2. Change to the project directory:
-   ```
-   cd your-project
-   ```
-3. Create a virtual environment and activate it:
 
+2. Navigate to the project directory:
+
+   ```bash
+   cd AiML-credit-risk---loan-optimization-ml
    ```
+
+3. Create and activate a virtual environment:
+
+   ```bash
    # Using virtualenv
    virtualenv venv
    source venv/bin/activate
@@ -40,70 +152,23 @@ This project aims to deliver a comprehensive machine learning-based solution tha
    ```
 
 4. Install the required dependencies:
-   ```
+   ```bash
    pip install -r requirements.txt
    ```
 
-### Usage
+## Usage
 
-1. Start the Jupyter Notebook:
-   ```
-   jupyter notebook
-   ```
-2. Navigate to the `notebooks/` directory and open the relevant notebooks:
-   - `data_understanding.ipynb`
-   - `data_cleaning.ipynb`
-   - `feature_engineering.ipynb`
-   - `eda.ipynb`
-   - `model_building.ipynb`
-     Each notebook corresponds to a step in the data analysis process, as outlined in the introduction.
-
-## Scripts and Notebooks
-
-The project is organized into the following scripts and Jupyter Notebooks:
-
-1. **Data Understanding**:
-
-   - `data_understanding.ipynb`
-
-2. **Data Cleaning and Preprocessing**:
-
-   - `data_cleaning.ipynb`
-
-3. **Feature Engineering**:
-
-   - `feature_engineering.ipynb`
-
-4. **Exploratory Data Analysis (EDA)**:
-
-   - `eda.ipynb`
-
-4.1. **EDA log File**
-
-- You can Find the EDA Log file in notebooks/eda_analysis.log
-
-5. **Model Building**:
-   - `model_building.ipynb`
-
-Each notebook corresponds to a step in the data analysis process, as outlined in the introduction.
-
-## Dependencies
-
-The required Python packages for this project are listed in the `requirements.txt` file. You can install them using the following command:
-
-```
-pip install -r requirements.txt
-```
+Open the Jupyter notebooks in your preferred environment and follow the instructions. Customize the code based on your dataset and requirements.
 
 ## Contributing
 
-If you would like to contribute to this project, please follow the standard GitHub workflow:
+Contributions are welcome. Please follow these steps:
 
-1. Fork the repository
-2. Create a new branch for your feature or bug fix
-3. Make your changes and commit them
-4. Push your branch to your forked repository
-5. Create a pull request to the main repository
+1. Fork the repository.
+2. Create a new branch for your feature or bug fix.
+3. Make your changes and commit them.
+4. Push your branch to your forked repository.
+5. Create a pull request to the main repository.
 
 ## License
 
@@ -111,4 +176,4 @@ This project is licensed under the [MIT License](LICENSE).
 
 ## Acknowledgments
 
-- Thank you to the contributors and the open-source community for their support and resources.
+Special thanks to the contributors and the open-source community for their support and resources.
