@@ -1,17 +1,16 @@
-import logging
+
 import pandas as pd
-import matplotlib.pyplot as plt
 import seaborn as sns
-import plotly.express as px
-from plotly.subplots import make_subplots
-import plotly.graph_objects as go
+from sklearn.preprocessing import LabelEncoder
+import matplotlib.pyplot as plt
+import math
 import logging
 import math
 
 logging.basicConfig(filename='eda_analysis.log', level=logging.INFO, 
                     format='%(asctime)s:%(levelname)s:%(message)s')
 
-    # Set general aesthetics for the plots
+# Set general aesthetics for the plots
 sns.set_style("whitegrid")
 def eda_overview(df):
     """
@@ -48,9 +47,6 @@ def eda_overview(df):
     except Exception as e:
         logging.error(f"An error occurred during EDA: {str(e)}")
         print("An error occurred during EDA:", str(e))
-
-
-
 
 
 def descriptive_stat(df):
@@ -128,8 +124,6 @@ def visualize_numerical_distribution(df):
 
 
 
-
-
 def analyze_categorical_distribution(df):
     """
     Analyze the distribution of categorical features in the provided dataset.
@@ -142,47 +136,48 @@ def analyze_categorical_distribution(df):
     """
     try:
         logging.info("Started analyzing categorical feature distribution")
-        
+
         # Limit the DataFrame to the first 2000 rows
         df = df.head(2000)
-        
+
         # Extract categorical features
         categorical_features = df.select_dtypes(include=['object'])
-        
+
         if categorical_features.empty:
             logging.error("No categorical features found in the provided DataFrame.")
             return
-        
+
         # Aggregate data before plotting
         aggregated_data = {col: df[col].value_counts() for col in categorical_features.columns}
-        
+
         # Calculate number of rows and columns for subplots
         num_cols = 2
         num_rows = math.ceil(len(categorical_features.columns) / num_cols)
-        
-        fig = make_subplots(rows=num_rows, cols=num_cols, subplot_titles=[f'Distribution of {col}' for col in categorical_features.columns])
+
+        # Create the figure and subplots
+        fig, axes = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(12, 4 * num_rows))
 
         for i, (column, value_counts) in enumerate(aggregated_data.items()):
-            row = i // num_cols + 1
-            col = i % num_cols + 1
-            bar = go.Bar(x=value_counts.index, y=value_counts.values, name=column)
-            fig.add_trace(bar, row=row, col=col)
-        
-        fig.update_layout(height=300 * num_rows, showlegend=False)
-        fig.show()
-        
+            row = i // num_cols
+            col = i % num_cols
+            axes[row, col].bar(value_counts.index, value_counts.values)
+            axes[row, col].set_title(f'Distribution of {column}')
+            axes[row, col].set_xlabel(column)
+            axes[row, col].set_ylabel('Count')
+
+        plt.tight_layout()
+        plt.show()
+
         logging.info("Completed analysis")
-        
+
         print("Observations:")
         for column, value_counts in aggregated_data.items():
             unique_categories = len(value_counts)
             print(f"{column} has {unique_categories} unique categories.")
-    
+
     except Exception as e:
         logging.error(f"An error occurred during categorical feature analysis: {str(e)}")
         print(f"An error occurred during categorical feature analysis: {str(e)}")
-
-
 
 
 
@@ -344,5 +339,56 @@ def detect_outliers(df):
         logging.error(f"An error occurred during outlier detection: {str(e)}")
 
 
+def remove_outliers(df):
+    """
+    Removes outliers from a dfFrame based on the IQR method.
+
+    Parameters:
+    df (pd.dfFrame): Input dfFrame from which to remove outliers.
+
+    Returns:
+    pd.dfFrame: dfFrame with outliers removed.
+    """
+    # Select numerical features
+    numerical_features = df.select_dtypes(include=[np.number])
+
+    # Initialize a boolean mask to keep track of outliers
+    mask = pd.Series([True] * len(df))
+
+    for column in numerical_features.columns:
+        q1 = df[column].quantile(0.25)
+        q3 = df[column].quantile(0.75)
+        iqr = q3 - q1
+        lower_bound = q1 - 1.5 * iqr
+        upper_bound = q3 + 1.5 * iqr
+
+        # Update the mask to filter out rows containing outliers
+        mask = mask & ~((df[column] < lower_bound) | (df[column] > upper_bound))
+
+    df_no_outliers = df[mask]
+    return df_no_outliers
 
 
+def encode_categorical_variables(df):
+    """
+    Encodes categorical variables in the input dfframe using Label Encoding.
+
+    Parameters:
+    df (pandas.dfFrame): The input dfframe containing the df.
+
+    Returns:
+    pandas.dfFrame: The dfframe with the categorical variables encoded and converted to numerical type.
+    """
+    try:
+        # Copy the dfframe to avoid modifying the original
+        df = df.copy()
+
+        # Label Encoding
+        label_encoder = LabelEncoder()
+        for col in df.select_dtypes(include=['object']).columns:
+            df[col] = label_encoder.fit_transform(df[col])
+
+        return df
+    except Exception as e:
+        print(f"Error occurred during encoding categorical variables: {e}")
+        return None
